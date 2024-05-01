@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Final Report: Data Science Platform</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #800000; 
+            color: #333; 
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 960px; 
+            margin: 0 auto; 
+            padding: 0 1in; 
+        }
+
+        /* Header styles */
+        header {
+            background-color: #ffd700; 
+            color: #000000; 
+            text-align: center;
+            padding: 20px 0;
+            margin-bottom: 20px;
+        }
+
+        /* Main content styles */
+        .section {
+            background-color: #ffd700; 
+            padding: 40px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        /* Paragraph styles */
+        p {
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        /* Link styles */
+        a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        img {
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 50%;
+            height: auto;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+        <h1>Final Report: Data Science Platform</h1>
+    </header>
+    
+    <div class="section">
+        <h2>Vision</h2>
+        <p>Our vision for this project was to design a tool that can be used by any non-profit 
+            organization in trying to understand and draw conclusions from their data through modeling. 
+            The goal was to design an application that would allow the user to predict outcomes based on their data.
+            This can be very confusing for people who do not understand how to build a model, so our goal was
+            to provide a tool that is tailored to all of their needs that can be used by anyone. The idea was to have
+            multiple models that the user could choose from to model different kinds of data.
+        </p>
+        <p>Our goal was to design a dashboard using Shiny in RStudio that could display all the modeling output. 
+          In order to run this model we would wrangle a data set into a useable input for the dashboard. The data set in use was a
+          financial data set for a non profit. This data would be provided for us in a contained environment by our project mentor,
+          Carl McQueen.
+        </p>
+      </div>
+    
+    <div class="section">
+        <h2>Team</h2>
+        <p>Henry Goldkuhle: Dat science major. Participated on the basketball team during time at Calvin. Other hobbies include reading, running, or fishing.
+          </p>
+        <p>
+          Zander Hartsuff: Data science major. Participated on the cross country and track teams during 4 years at Calvin. Other hobbies include rock climbing, swiming, and writing.
+        </p>
+      </div>
+    
+    <div class="section">
+        <h2>Code</h2>
+        <h3>Model Application Code</h3>
+        <p>#Code is for the model dashboard and final application of our project.
+
+            library(shiny)
+            library(flexdashboard)
+            library(DT)
+            library(dplyr)
+            library(plotly)
+            library(pROC)
+            library(randomForest)
+            library(xgboost)
+            library(forecast)
+            </p>
+            <p># Define UI
+            ui <- navbarPage("Model Dashboard: Senior Project",
+                             header = tagList(
+                               tags$style(type="text/css", ".navbar { margin-bottom: 0; }"),
+                               div(
+                                 class = "navbar-custom-menu",
+                                 actionButton("helpBtn", "Help", icon = icon("info-circle"), class = "btn btn-info navbar-btn")
+                               )
+                             ),
+                             tabPanel("Model Analysis",
+                                      sidebarLayout(
+                                        sidebarPanel(
+                                          fileInput("dataset_upload", "Choose CSV File",
+                                                    accept = c("text/csv", "text/comma-separated-values,text/plain", ".csv")),
+                                          uiOutput("variable_selector"),
+                                          uiOutput("predictor_selector"),
+                                          selectInput("model_type", label = h5("Choose model type"),
+                                                      choices = c("Linear Regression" = "lm",
+                                                                  "Logistic Regression" = "glm",
+                                                                  "Random Forest Regression" = "rfr",
+                                                                  "Random Forest Classification" = "rfc",
+                                                                  "XG Boost" = "xgb"), selected = "lm"),
+                                          actionButton("run_model", "Run Model")
+                                        ),
+                                        mainPanel(
+                                          tabsetPanel(
+                                            tabPanel("Model Summary", verbatimTextOutput("model_summary")),
+                                            tabPanel("Data Table", DTOutput("data_table")),
+                                            tabPanel("Scatter Plot", plotlyOutput("scatter_plot")),
+                                            tabPanel("Histogram", plotlyOutput("histogram_plot"))
+                                          )
+                                        )
+                                      )
+                             ),
+                             tabPanel("Time Series Analysis",
+                                      sidebarLayout(
+                                        sidebarPanel(
+                                          fileInput("ts_dataset_upload", "Upload Time Series CSV",
+                                                    accept = c("text/csv", "text/comma-separated-values,text/plain", ".csv")),
+                                          selectInput("ts_time_column", "Select Time Column", choices = NULL),
+                                          selectInput("ts_variable", "Select Variable to Analyze", choices = NULL),
+                                          actionButton("run_ts_analysis", "Run Time Series Analysis"),
+                                          downloadButton("downloadData", "Download Data with Predictions")
+                                        ),
+                                        mainPanel(
+                                          tabsetPanel(
+                                            tabPanel("Time Series Plot", plotOutput("ts_plot")),
+                                            tabPanel("Forecast Plot", plotOutput("ts_forecast_plot")),
+                                            tabPanel("Cycle Boxplot", plotOutput("cycle_boxplot"))
+                                          )
+                                        )
+                                      ))
+            )
+            </p>
+            <p>
+            # Define server logic
+            server <- function(input, output, session) {
+              uploaded_data <- reactive({
+                req(input$dataset_upload)
+                
+                inFile <- input$dataset_upload
+                read.csv(inFile$datapath, stringsAsFactors = FALSE)
+              })
+              
+              output$variable_selector <- renderUI({
+                data <- uploaded_data()
+                if (!is.null(data)) {
+                  selectInput("variable_choice", label = h5("Choose one or more predictor variables"), 
+                              choices = names(data), selected = names(data)[1], multiple = TRUE)
+                }
+              })
+              
+              output$predictor_selector <- renderUI({
+                data <- uploaded_data()
+                if (!is.null(data)) {
+                  selectInput("predictor_variable", label = h5("Choose response variable: "), 
+                              choices = names(data), selected = names(data)[1], multiple = FALSE)
+                }
+              })
+              
+              # Create a reactive expression for the model that triggers when the 'Run Model' button is clicked
+              model1 <- eventReactive(input$run_model, {
+                req(uploaded_data()) 
+                data <- uploaded_data()
+                
+                formula_str <- paste(paste(input$predictor_variable), "~", paste(input$variable_choice, collapse = " + "))
+                if (input$model_type == "lm") {
+                  lm(formula_str, data = data)
+                } else if (input$model_type == "glm") {
+                  glm(formula_str, data = data, family = binomial())
+                } else if(input$model_type == "rfc") {
+                  model <- randomForest(x = data[, input$variable_choice], y = data[[input$predictor_variable]], 
+                                        ntree = 25,
+                                        type = ifelse(is.factor(data[[input$predictor_variable]]), "classification", "regression"))
+                } else if(input$model_type == "rfr") {
+                  model <- randomForest(x = data[, input$variable_choice, drop = FALSE], y = data[[input$predictor_variable]],
+                                        ntree = 25) 
+                } else if(input$model_type == "xgb"){
+                  dtrain <- xgb.DMatrix(data = as.matrix(data[, input$variable_choice, drop = FALSE]), label = data[[input$predictor_variable]])
+                  
+                  params <- list(objective = "reg:squarederror")
+                  
+                  model <- xgboost(params = params, data = dtrain, nrounds = 100, verbose = 0)
+                } else {
+                  NULL
+                }
+              }, ignoreNULL = FALSE)
+              
+              output$model_summary <- renderPrint({
+                req(model1())
+                model <- model1()
+                if (input$model_type == "xgb") {
+                  data <- uploaded_data()
+                  dtest <- xgb.DMatrix(data = as.matrix(data[, input$variable_choice]))
+                  predictions <- predict(model, dtest)
+                  
+                  actuals <- data[[input$predictor_variable]]
+                  n<-length(actuals)
+                  mean_actuals <- mean(actuals)
+                  ss_total <- sum((actuals - mean_actuals)^2)
+                  ss_res <- sum((actuals - predictions)^2)
+                  rsq <- 1 - ss_res / ss_total
+                  res <- sqrt(ss_res/(n-2))
+                  
+                  # Print the importance matrix
+                  importance_matrix <- xgb.importance(feature_names = colnames(dtest), model = model)
+                  print(importance_matrix)
+                  
+                  cat("\nR-squared for XGBoost model:", rsq, "\n")
+                  cat("\nResidual Standard Error: ", ss_res, "\n")
+                } else {
+                  print(summary(model1()))
+                }
+              })
+              
+              output$data_table <- renderDT({
+                req(model1())
+                data <- uploaded_data()
+                
+                if (input$model_type == "xgb") {
+                  dtest <- xgb.DMatrix(data = as.matrix(data[, input$variable_choice]))
+                  predictions <- predict(model1(), dtest)
+                  data$residuals <- data[[input$predictor_variable]] - predictions
+                } else {
+                  predictions <- predict(model1(), newdata = data, type = ifelse(input$model_type %in% c("rfc", "glm"), "response", "response"))
+                }
+                
+                if (input$model_type %in% c("rfr", "lm")) {
+                  data$residuals <- with(data, data[[input$predictor_variable]] - predictions)
+                }
+                
+                data$predicted <- predictions
+                
+                display_columns <- c(input$predictor_variable, "predicted")
+                if (input$model_type %in% c("rfr", "lm", "xgb")) {
+                  display_columns <- c(display_columns, "residuals")
+                }
+                
+                display_columns <- c(display_columns, input$variable_choice)
+                
+                datatable(data[, display_columns, drop = FALSE], options = list(pageLength = 10))
+              })
+              
+              output$scatter_plot <- renderPlotly({
+              req(model1())
+              data <- uploaded_data()
+              
+              # Generate predictions
+              if (input$model_type == "xgb") {
+                dtest <- xgb.DMatrix(data = as.matrix(data[, input$variable_choice]))
+                predictions <- predict(model1(), dtest)
+              } else {
+                predictions <- predict(model1(), newdata = data)
+              }
+              
+              # Add predictions as a new column in the dataset
+              data$predicted <- predictions
+              
+              actual_values <- data[[input$predictor_variable]]
+              if (!is.numeric(actual_values)) {
+                stop("The predictor variable must be numeric for a scatter plot.")
+              }
+              if (!is.numeric(predictions)) {
+                stop("Predicted values must be numeric for a scatter plot.")
+              }
+              
+              # Create the scatter plot with actual vs predicted values
+              plot_ly(data = data, x = ~actual_values, y = ~predicted,
+                      type = 'scatter', mode = 'markers') %>%
+                layout(xaxis = list(title = input$predictor_variable),
+                       yaxis = list(title = 'Predicted'))
+            })
+            
+              
+              
+              output$histogram_plot <- renderPlotly({
+                req(model1())  # Ensure the model is calculated
+                data <- uploaded_data()
+                
+                if (input$model_type %in% c("rfr", "lm", "xgb")) {
+                  if (input$model_type == "xgb") {
+                    dtest <- xgb.DMatrix(data = as.matrix(data[, input$variable_choice]))
+                    predictions <- predict(model1(), dtest)
+                  } else {
+                    predictions <- predict(model1(), newdata = data)
+                  }
+                  
+                  # Calculate residuals for regression models
+                  residuals <- data[[input$predictor_variable]] - predictions
+                  
+                  plot_ly(x = ~residuals, type = 'histogram') %>%
+                    layout(title = "Residuals Distribution",
+                           xaxis = list(title = "Residuals"),
+                           yaxis = list(title = "Frequency"))
+                } else if (input$model_type == "rfc" || input$model_type == "glm") {
+                  # Classification models: ROC curve plotting
+                  req(pROC)
+                  pred_probs <- predict(model1(), newdata = data, type = "response")
+                  actual_outcomes <- data$YourBinaryOutcomeColumn
+                  roc_curve <- roc(response = actual_outcomes, predictor = pred_probs)
+                  auc_value <- auc(roc_curve)
+                  
+                  plot_ly(x = ~roc_curve$specificities, y = ~roc_curve$sensitivities, type = 'scatter', mode = 'lines',
+                          name = paste("AUC:", round(auc_value, 3)),
+                          line = list(color = 'blue')) %>%
+                    layout(title = "ROC Curve",
+                           xaxis = list(title = "1 - Specificity"),
+                           yaxis = list(title = "Sensitivity"))
+                } else {
+                  plot_ly() %>%
+                    add_annotations(text = "Plot not applicable for this model type",
+                                    x = 0.5, y = 0.5, showarrow = F, font = list(size = 20))
+                }
+              })
+              
+              processedData <- eventReactive(input$run_ts_analysis, {
+                req(input$ts_dataset_upload)  # Ensure file is uploaded
+                inFile <- input$ts_dataset_upload
+                
+                # Read the uploaded file
+                ts_data <- read.csv(inFile$datapath, stringsAsFactors = FALSE)
+                
+                # Process dates and remove year and month columns
+                ts_data <- ts_data %>%
+                  mutate(
+                    date = mdy(date), 
+                    year = year(date),
+                    month = month(date)
+                  ) %>%
+                  arrange(date) %>%
+                  select(-year, -month)
+                
+                return(ts_data)
+              })
+              
+              observe({
+                req(input$ts_dataset_upload)
+                data <- tryCatch({
+                  read.csv(input$ts_dataset_upload$datapath)
+                }, error = function(e) {
+                  return(NULL)
+                })
+                
+                if (!is.null(data)) {
+                  updateSelectInput(session, "ts_time_column", choices = names(data))
+                  updateSelectInput(session, "ts_variable", choices = names(data))
+                }
+              })
+              
+              # Create time series object
+              reactiveTimeSeries <- reactive({
+                req(processedData(), input$ts_variable)
+                data <-processedData()
+                
+                if (nrow(data) == 0) {
+                  return(ts())
+                }
+                
+                # Extract the time series column based on user input
+                ts_values <- as.numeric(data[[input$ts_variable]])
+                ts_start_year <- year(min(data$date))
+                ts_start_month <- month(min(data$date))
+                
+                # Create the time series object
+                ts(ts_values, frequency = 12, start = c(ts_start_year, ts_start_month))
+              })
+              
+              output$ts_plot <- renderPlot({
+                ts_data <- reactiveTimeSeries()
+                if (is.null(ts_data) || length(ts_data) == 0) {
+                  plot.new()
+                  title(main = "No valid data available")
+                } else {
+                  plot.ts(ts_data, main = "Time Series Plot", ylab = "Values", xlab = "Time")
+                  abline(reg = lm(ts_data ~ time(ts_data)), col = "red")
+                }
+              })
+              
+              output$ts_forecast_plot <- renderPlot({
+                ts_data <- reactiveTimeSeries()
+                if (is.null(ts_data) || length(ts_data) == 0) {
+                  plot.new()
+                  title(main = "No valid data available")
+                } else {
+                  fit <- auto.arima(log(ts_data))
+                  future <- forecast(fit, h = 24)
+                  ts.plot(ts_data, exp(future$mean), log = "y", lty = c(1, 3), col = c("blue", "red"),
+                          main = "Forecast Plot", ylab = "Values", xlab = "Time")
+                }
+              })
+              
+              # Cycle boxplot output
+              output$cycle_boxplot <- renderPlot({
+                req(processedData())
+                ts_data <- processedData()
+                ts_values <- as.numeric(ts_data[[input$ts_variable]])
+                ts_series <- ts(ts_values, frequency = 12)
+                boxplot(ts_series ~ cycle(ts_series), main = "Cycle Boxplot", xlab = "Month", ylab = "Values")
+              })
+              
+              output$downloadData <- downloadHandler(
+                filename = function() {
+                  paste("data_with_predictions-", Sys.Date(), ".csv", sep="")
+                },
+                content = function(file) {
+                  req(processedData())
+                  data <- processedData()
+                  ts_values <- as.numeric(data[[input$ts_variable]])
+                  ts_series <- ts(ts_values, frequency = 12)
+                  fit <- auto.arima(ts_series)
+                  future <- forecast(fit, h = 24)
+                  predictions <- data.frame(Time = time(future$mean), Predicted = future$mean)
+                  write.csv(predictions, file)
+                }
+              )
+              
+              observeEvent(input$helpBtn, {
+                showModal(modalDialog(
+                  title = "Help",
+                  HTML("
+                    <h4>Model Descriptions:</h4>
+                    <ul>
+                      <li><b>Linear Regression (LM):</b> A regression model that estimates the relationship between one independent variable and one dependent variable using a straight line</li>
+                      <li><b>Logistic Regression (GLM):</b> A process of modeling the probability of a discrete outcome given an input variable. Binary data.</li>
+                      <li><b>Random Forest Regression (RFR):</b> A type of ensemble learning method for regression.</li>
+                      <li><b>Random Forest Classification (RFC):</b> A type of ensemble learning method for classification.</li>
+                      <li><b>XGBoost (XGB):</b> An implementation of gradient boosted decision trees designed for speed and performance on regression variables.</li>
+                    </ul>
+                    <h4>What R-squared Tells You:</h4>
+                    <p>R-squared is a statistical measure of how close the data are to the fitted regression line. It is also known as the coefficient of determination, or the coefficient of multiple determination for multiple regression. The higher the R-squared, the better the model fits your data.</p>
+                    <h4>Time Series Analysis:</h4>
+                    <p>Time Series Analysis allows you to analyze data when the data is collected over a set period of time over specific intervals</p>
+                    <p>The cycle graph allows you to see clearer when certain months have greater importance then others</p>
+                  "),
+                  size = "l",
+                  easyClose = TRUE,
+                  footer = modalButton("Close")
+                ))
+              })
+            }
+          </p>
+          <p>
+            # Run the application
+            shinyApp(ui = ui, server = server)
+            </p>
+        <h3>Time Series Analysis Code</h3>
+        <p>#Code used for the basis of our time series page in the application
+
+            #Month time series
+            library(dplyr)
+            library(lubridate)
+            
+            monthlyData <- read.csv(file = "~/CarlSeniorProject/rDashboard/monthlyData.csv")
+            
+            monthlyData <- monthlyData %>%
+              mutate(
+                date = mdy(date), # Convert date from "m/d/yy" format to Date object
+                year = year(date), # Extract year
+                month = month(date) # Extract month
+              ) %>%
+              arrange(date) %>%
+              select(-year, -month) # Optionally remove year and month if they are no longer needed
+            
+            
+            #Start Date 1989-10-01, end date 2016-09-01
+            moneyMonthlyData <- monthlyData[2]
+            
+            moneyTimeSeriesMonth <- ts(moneyMonthlyData, frequency=12, start=c(1984,1))
+            moneyTimeSeriesMonth
+            
+            ##Time Series Plot
+            plot.ts(moneyTimeSeriesMonth)
+            abline(reg=lm(moneyTimeSeriesMonth~time(moneyTimeSeriesMonth)))
+            
+            ##Cycle Time Series
+            cycle(moneyTimeSeriesMonth)
+            plot(aggregate(moneyTimeSeriesMonth, FUN=mean))
+            
+            #huge increase om december also see increase in march(tax returns season, get tax deductable)
+            boxplot(moneyTimeSeriesMonth~cycle(moneyTimeSeriesMonth))
+            
+            ##Passes Dickey-Fuller Test(Good for time series analysis)
+            #Use log and diff to take away the trend of upward in the data as well as unequal variance of the data
+            tseries::adf.test(diff(log(moneyTimeSeriesMonth)), alternative="stationary", k=0)
+            
+            acf(log(moneyTimeSeriesMonth))
+            
+            acf(diff(log(moneyTimeSeriesMonth)))
+            pacf(diff(log(moneyTimeSeriesMonth)))
+            
+            fitMonth <- arima(log(moneyTimeSeriesMonth), c(0, 1, 1),seasonal = list(order = c(0, 1, 1), period = 12))
+            predMonth <- predict(fitMonth, n.ahead = 10*12)
+            ts.plot(moneyTimeSeriesMonth,2.718^predMonth$pred, log="y", lty=c(1,3))</p>
+        <h3>Data Wrangling Code</h3>
+        <p>---
+          title: "DataWranglingRound2"
+          output: html_document
+          date: "2024-01-31"
+          ---
+          
+          ```{r}
+          library(tidyr)
+          library(dplyr)
+          library(ggplot2)
+          library(tibble)
+          ```
+          
+          </p>
+          <p>
+          ## Reading in Data
+          
+          ```{r}
+          
+          bio_db <- readRDS("/mnt/shared_workspace/CalvinProject/Data/Raw/bio_raw.rds")
+          bio_db <- bio_db[bio_db$age2023 >= 0, ]
+          bio_db |> drop_na(median_household_income)
+          ```
+          
+          ```{r}
+          mbr_db <- readRDS("/mnt/shared_workspace/CalvinProject/Data/Raw/mbr_raw.rds")
+          ```
+          
+          ```{r}
+          rev_db <- readRDS("/mnt/shared_workspace/CalvinProject/Data/Raw/rev_raw.rds")
+          ```
+          </p>
+          <p>
+          ## Simple Tidying
+          
+          ```{r}
+          bio_db <- bio_db[bio_db$age2023 >= 0, ]
+          bio_db |> drop_na(median_household_income)
+          ```
+          
+          ```{r}
+          rev_db$RevDate <- as.Date(rev_db$RevDate)
+          rev_db$Year <- lubridate::year(rev_db$RevDate)
+          ```
+          </p>
+          <p>
+          ## Data Wrangling
+          
+          ```{r}
+          library(lubridate)
+          donors_by_year <- rev_db %>% 
+            rowid_to_column('uniqueRow') %>% 
+            filter(!is.na(Year) & Year > 1909) %>%
+            group_by(Year,NewID) %>% 
+            summarise(Num_Gifts = n_distinct(uniqueRow,na.rm=T),
+                      DonationInYear = sum(RevAmt,na.rm=T),
+                      Avg_Amt = mean(RevAmt),
+                      Most_recent_giftInYear = max(RevDate),
+                      Most_recent_year = year(Most_recent_giftInYear),
+                      DecemberGiver = ifelse(format(as.Date(Most_recent_giftInYear), "%m") == "12", 1, 0)
+                      )
+          ```
+          
+          ## Grouping by donor ID
+          
+          ```{r}
+          grouped_by_ID <- donors_by_year %>%
+            group_by(NewID) %>%
+            summarize(
+              NumYearsGiven = n_distinct(Year),
+              TotalYearsGiven = max(Year) - min(Year) + 1,
+              FirstYear = min(Year),
+              LastYear = max(Year, na.rm = TRUE),
+              TotalDonations = sum(DonationInYear, na.rm = TRUE),
+              AverageGivingsPerYear = sum(TotalDonations) / TotalYearsGiven,
+              AverageDonationPerYear = sum(TotalDonations) / NumYearsGiven,
+              Total_Gifts = sum(Num_Gifts),
+              MultiyearGiver = ifelse(FirstYear != LastYear, 1, 0),
+              Frequency_Gifts_Per_Year = Total_Gifts / NumYearsGiven,
+              Most_recent_year_given = max(Most_recent_year),
+              YearsSinceLastGift = 2016 - Most_recent_year_given
+            ) %>%
+            mutate(
+              mean_freq = mean(Frequency_Gifts_Per_Year, na.rm = TRUE),
+              stdfreq = sd(Frequency_Gifts_Per_Year, na.rm = TRUE),
+              frequency_score = ifelse(stdfreq != 0, (Frequency_Gifts_Per_Year - mean_freq) / stdfreq, 0)
+            )
+          ```
+          
+          
+          
+          
+          ## Multi-year extrapolation
+          
+          ```{r}
+          GiftAll <- left_join(donors_by_year, grouped_by_ID, by = "NewID")
+          ```
+          
+          ```{r}
+          GiftAll <- left_join(GiftAll, bio_db, by = "NewID") 
+          ```
+          
+          ```{r}
+          breaks <- seq(20, 110, by = 10)
+          labels <- paste0(breaks, "-", breaks + 9)
+          labels <- labels[-length(labels)]
+          labels[length(labels)] <- "100+"
+          
+          GiftAll <- GiftAll %>%
+            mutate(
+              Age = Age_Int - (2016 - Year)
+            ) %>%
+            filter(!is.na(Age) & Age >= 0 & Age >= 20 & Age <= 110) %>%
+            mutate(
+              AgeGroup = cut(Age, breaks = breaks, labels = labels, include.lowest = TRUE)
+            )
+          ```
+          
+          ```{r}
+          GiftAll <- GiftAll %>%
+            mutate(
+              Donation1 = ifelse(Year == FirstYear, DonationInYear, 0),
+              Donation2 = ifelse(Year == (FirstYear + 1), DonationInYear, 0),
+              Donation3 = ifelse(Year == (FirstYear + 2), DonationInYear, 0),
+              Donation4 = ifelse(Year == (FirstYear + 3), DonationInYear, 0),
+              Donation5 = ifelse(Year == (FirstYear + 4), DonationInYear, 0),
+              Donation6 = ifelse(Year == (FirstYear + 5), DonationInYear, 0),
+              Donation7 = ifelse(Year == (FirstYear + 6), DonationInYear, 0),
+              Donation8 = ifelse(Year == (FirstYear + 7), DonationInYear, 0),
+              Donation9 = ifelse(Year == (FirstYear + 8), DonationInYear, 0),
+              Donation10 = ifelse(Year == (FirstYear + 9), DonationInYear, 0),
+              Donation11 = ifelse(Year == FirstYear + 10, DonationInYear, 0),
+              Donation12 = ifelse(Year == (FirstYear + 11), DonationInYear, 0),
+              Donation13 = ifelse(Year == (FirstYear + 12), DonationInYear, 0),
+              Donation14 = ifelse(Year == (FirstYear + 13), DonationInYear, 0),
+              Donation15 = ifelse(Year == (FirstYear + 14), DonationInYear, 0),
+              Donation16 = ifelse(Year == (FirstYear + 15), DonationInYear, 0),
+              Donation17 = ifelse(Year == (FirstYear + 16), DonationInYear, 0),
+              Donation18 = ifelse(Year == (FirstYear + 17), DonationInYear, 0),
+              DonationMax = ifelse(Year > (FirstYear + 9), DonationInYear, 0),
+              FirstYearDonor = ifelse(FirstYear == Year, 1, 0),
+              SecondYearDonor = ifelse(Year == (FirstYear + 1), 1, 0),
+              ThirdYearDonor = ifelse(Year == (FirstYear + 2), 1, 0),
+              FourthYearDonor = ifelse(Year == (FirstYear + 3), 1, 0),
+              FifthYearDonor = ifelse(Year == (FirstYear + 4), 1, 0),
+              SixthYearDonor = ifelse(Year == (FirstYear + 5), 1, 0),
+              SeventhYearDonor = ifelse(Year == (FirstYear + 6), 1, 0),
+              EighthYearDonor = ifelse(Year == (FirstYear + 7), 1, 0),
+              NinthYearDonor = ifelse(Year == (FirstYear + 8), 1, 0),
+              TenthYearDonor = ifelse(Year == (FirstYear + 9), 1, 0),
+              Year11Donor = ifelse(Year == (FirstYear + 10), 1, 0),
+              Year12Donor = ifelse(Year == (FirstYear + 11), 1, 0),
+              Year13Donor = ifelse(Year == (FirstYear + 12), 1, 0),
+              Year14Donor = ifelse(Year == (FirstYear + 13), 1, 0),
+              Year15Donor = ifelse(Year == (FirstYear + 14), 1, 0),
+              Year16Donor = ifelse(Year == (FirstYear + 15), 1, 0),
+              Year17Donor = ifelse(Year == (FirstYear + 16), 1, 0),
+              Year18Donor = ifelse(Year == (FirstYear + 17), 1, 0),
+              Year2to5Donor = ifelse(Year >= (FirstYear + 1) & Year <= (FirstYear + 4), 1, 0),
+              Year6to10Donor = ifelse(Year >= (FirstYear + 5) & Year <= (FirstYear + 9), 1, 0),
+              TenPlusYearDonor = ifelse(Year > (FirstYear + 9), 1, 0)
+            )
+          ```
+          </p>
+          <p>
+          ## Model Preparations
+          
+          ```{r}
+          model_data_year <- GiftAll %>%
+            select(Year, NewID, TotalYearsGiven, DonationInYear, TotalDonations, Total_Gifts, FirstYear, LastYear, MultiyearGiver, DecemberGiver, YearsSinceLastGift, Most_recent_year_given, frequency_score, AverageDonationPerYear, Gender, Age, AgeGroup, state, FirstYearDonor, Year2to5Donor, Year6to10Donor, TenPlusYearDonor)
+          ```
+          
+          ```{r}
+          model_input_data <- model_data_year %>%
+            group_by(NewID) %>%
+            summarise(
+              TotalYearsGiven = max(TotalYearsGiven),
+              TotalDonations = max(TotalDonations),
+              FirstYear = max(FirstYear),
+              LastYear = max(LastYear),
+              MultiyearGiver = max(MultiyearGiver),
+              DecemberGivings = mean(DecemberGiver),
+              YearsSinceLastGift = max(YearsSinceLastGift),
+              Most_recent_year_given = max(Most_recent_year_given),
+              Frequency_score = max(frequency_score),
+              AverageDonationPerYear = max(AverageDonationPerYear),
+              Gender = first(Gender),
+              Age = first(Age),
+              State = first(state)
+            )
+          ```
+          
+          
+          ```{r}
+          library(dplyr)
+          
+          # Take a random sample of 2000 rows
+          model_input_sample <- model_input_data %>%
+            sample_n(2000, replace = FALSE)
+          
+          # View the first few rows of the sampled data
+          head(model_input_sample)
+          ```
+          
+          ```{r}
+          model_input_sample <- model_input_sample %>%
+            mutate(
+              AgeGroup = cut(Age, breaks = breaks, labels = labels, include.lowest = TRUE)
+            )
+          ```
+          
+          
+          ```{r}
+          write.csv(model_input_sample, file = "model_input_sample.csv", row.names = FALSE)
+          ```
+          </p>
+        <p>
+          ## Searching by year
+          
+          
+          ```{r}
+          GiftYearAll <- GiftAll %>%
+            group_by(Year) %>%
+            summarise(
+              DonorFirstYear = sum(FirstYearDonor),
+              DonorSecondYear = sum(SecondYearDonor),
+              DonorThirdYear = sum(ThirdYearDonor),
+              DonorFourthYear = sum(FourthYearDonor),
+              DonorFifthYear = sum(FifthYearDonor),
+              DonorSixthYear = sum(SixthYearDonor),
+              DonorSeventhYear = sum(SeventhYearDonor),
+              DonorEighthYear = sum(EighthYearDonor),
+              DonorNinthYear = sum(NinthYearDonor),
+              DonorTenthYear = sum(TenthYearDonor),
+              DonorTenPlusYear = sum(TenPlusYearDonor),
+              DonorGroup2to5 = sum(SecondYearDonor + ThirdYearDonor + FourthYearDonor + FifthYearDonor),
+              DonorGroup6to10 = sum(SixthYearDonor + SeventhYearDonor + EighthYearDonor + NinthYearDonor + TenthYearDonor),
+              Donor11 = sum(Year11Donor),
+              Donor12 = sum(Year12Donor),
+              Donor13 = sum(Year13Donor),
+              Donor14 = sum(Year14Donor),
+              Donor15 = sum(Year15Donor),
+              Donor16 = sum(Year16Donor),
+              Donor17 = sum(Year17Donor),
+              Donor18 = sum(Year18Donor),
+              Rev_1_FirstYear = sum(Donation1),
+              RevSecondYear = sum(Donation2),
+              RevThirdYear = sum(Donation3),
+              RevFourthYear = sum(Donation4),
+              RevFifthYear = sum(Donation5),
+              RevSixthYear = sum(Donation6),
+              RevSeventhYear = sum(Donation7),
+              RevEighthYear = sum(Donation8),
+              RevNinthYear = sum(Donation9),
+              RevTenthYear = sum(Donation10),
+              Rev11 = sum(Donation11),
+              Rev12 = sum(Donation12),
+              Rev13 = sum(Donation13),
+              Rev14 = sum(Donation14),
+              Rev15 = sum(Donation15),
+              Rev16 = sum(Donation16),
+              Rev17 = sum(Donation17),
+              Rev18 = sum(Donation18),
+              Rev_4_TenPlusYear = sum(DonationMax),
+              Rev_2_Group2to5 = sum(Donation2 + Donation3 + Donation4 + Donation5),
+              Rev_3_Group6to10 = sum(Donation6 + Donation7 + Donation8 + Donation9 + Donation10),
+              AvgDonFirstYear = (Rev_1_FirstYear/DonorFirstYear),
+              AvgDonSecondYear = (RevSecondYear/DonorSecondYear),
+              AvgDonThirdYear = (RevThirdYear/DonorThirdYear),
+              AvgDonFourthYear = (RevFourthYear/DonorFourthYear),
+              AvgDonFifthYear = (RevFifthYear/DonorFifthYear),
+              AvgDonSixthYear = (RevSixthYear/DonorSixthYear),
+              AvgDonSeventhYear = (RevSeventhYear/DonorSeventhYear),
+              AvgDonEighthYear = (RevEighthYear/DonorEighthYear),
+              AvgDonNinthYear = (RevNinthYear/DonorNinthYear),
+              AvgDonTenthYear = (RevTenthYear/DonorTenthYear),
+              AvgDonTenPlusYear = (Rev_4_TenPlusYear/DonorTenPlusYear),
+              AvgDonGroup2to5 = (Rev_2_Group2to5/DonorGroup2to5),
+              AvgDonGroup6to10 = (Rev_3_Group6to10/DonorGroup6to10)
+            )
+            
+          ```
+          
+          
+          ```{r}
+          year_breakdown <- donors_by_year %>%
+            dplyr::left_join(.,(grouped_by_ID %>% dplyr::select(NewID,FirstYear) %>% distinct),by='NewID') %>% 
+            dplyr::group_by(Year) %>% 
+            dplyr::summarise(TotalGivers = n_distinct(NewID),
+                             ReturningGivers = n_distinct(ifelse(Year!=FirstYear,NewID,NA),na.rm=T),
+                             YearRevenue = sum(DonationInYear, na.rm = T),
+                             ReturningGifts = sum(ifelse(Year!=FirstYear,DonationInYear,NA),na.rm=T)
+                             ) %>%
+            dplyr::mutate(
+                  LaggedTotalGivers = lag(TotalGivers, default = 1),
+                  Attrition = ReturningGivers / LaggedTotalGivers,
+                  AttritionPercentage = (ReturningGivers / LaggedTotalGivers) * 100,
+                  )
+                              
+                              # are gifts shrinking? is first year biggest, is avg gift up or down, is avg per user higher but overall less with attrition? etc
+          ```
+          
+          ```{r}
+          year_breakdown <- left_join(year_breakdown, GiftYearAll, by = "Year")
+          ```
+          
+          ```{r}
+          year_breakdown <- year_breakdown %>%
+            mutate(Prop_4_FirstYear = DonorFirstYear / TotalGivers,
+                   Prop_3_2to5 = DonorGroup2to5 / TotalGivers,
+                   Prop_2_6to10 = DonorGroup6to10 / TotalGivers,
+                   Prop_1_10Plus = DonorTenPlusYear / TotalGivers,
+                   Rev_1 = Rev_1_FirstYear,
+                   Rev_2to5 = Rev_2_Group2to5,
+                   Rev_6to10 = Rev_3_Group6to10,
+                   Rev_10Plus = Rev_4_TenPlusYear,
+                   Donor_1 = DonorFirstYear,
+                   Donor_2to5 = DonorGroup2to5,
+                   Donor_6to10 = DonorGroup6to10,
+                   Donor_10Plus = DonorTenPlusYear,
+                   AvgDon_1 = AvgDonFirstYear,
+                   AvgDon_2to5 = AvgDonGroup2to5,
+                   AvgDon_6to10 = AvgDonGroup6to10,
+                   AvgDon_10Plus = AvgDonTenPlusYear
+                   )
+          ```
+          
+          ## time series data
+          
+          ```{r}
+          timeseries_analysis_data <- year_breakdown %>%
+            filter(Year >= 1980) %>%
+            select(Year, Attrition)
+          ```
+          
+          ```{r}
+          write.csv(timeseries_analysis_data, file = "timeseries_analysis_data.csv", row.names = FALSE)
+          ```
+          
+          
+          
+          ## Filtering
+          
+          ```{r}
+          year_breakdown_filtered <- subset(year_breakdown, Year >= 1990)
+          ```
+          
+          ```{r}
+          year_breakdown_data <- year_breakdown_filtered %>%
+            select(
+              Year, TotalGivers, YearRevenue, ReturningGivers, ReturningGifts, Attrition, Donor_1, Donor_2to5, Donor_6to10, Donor_10Plus, Rev_1, Rev_2to5, Rev_6to10, Rev_10Plus, AvgDon_1, AvgDon_2to5, AvgDon_6to10, AvgDon_10Plus
+            )
+          ```
+          
+          
+          ```{r}
+          write.csv(year_breakdown_data, file = "year_breakdown_data.csv", row.names = FALSE)
+          ```
+          </p>
+          <p>
+          ## Visualizing the Data
+          
+          ```{r}
+          Givings_table <- year_breakdown_filtered %>%
+            select(Year, Rev_1_FirstYear, Rev_2_Group2to5, Rev_3_Group6to10, Rev_4_TenPlusYear)
+          
+          Givings_long <- Givings_table %>%
+            pivot_longer(cols = starts_with("Rev"),
+                         names_to = "Donor_Group",
+                         values_to = "Donations")
+          ```
+          
+          ```{r}
+          Retention_table <- year_breakdown_filtered %>%
+            select(Year, Prop_4_FirstYear, Prop_3_2to5, Prop_2_6to10, Prop_1_10Plus)
+          
+          Retention_long <- Retention_table %>%
+            pivot_longer(cols = starts_with("Prop"),
+                         names_to = "Donor_Type",
+                         values_to = "Proportion")
+          ```
+          
+          ## Who is giving the most?
+          
+          ```{r}
+          ggplot(Givings_long, aes(fill = Donor_Group, y = Donations, x = Year)) + 
+            geom_bar(position = "stack", stat = "identity") +
+            labs(x = "Year of Donation", y = "Donation Amount (in millions)", title = "Annual Donation Totals by Number of Years Donated") +
+            scale_fill_manual(values = c("red", "orange", "green", "blue"), 
+                              labels = c("1 Year", "2-5 Years", "6-10 Years", "11+ Years"),
+                              name = NULL
+                              ) +
+            scale_y_continuous(breaks = c(0, 20000000, 40000000, 60000000, 80000000, 100000000),
+                               labels = c("0", "20", "40", "60", "80", "100")) +
+            theme_minimal() +
+            theme(legend.position = "top", plot.title = element_text(hjust = 0.5))
+          ```
+          
+          ## Are Donors being retained well?
+          
+          ```{r}
+          ggplot(Retention_long, aes(fill = Donor_Type, y = Proportion, x = Year)) + 
+            geom_bar(position = "fill", stat = "identity") +
+            labs(x = "Year", y = "Proportion", title = "Proportion of Donor Demographics by Years Donated") +
+            scale_fill_manual(values = c("blue", "green", "orange", "red"), 
+                              labels = c("11+ Years", "6-10 Years", "2-5 Years", "1 Year"),
+                              name = "") +
+            theme_minimal() +
+            theme(legend.position = "top", plot.title = element_text(hjust = 0.5))
+          ```
+          
+          ```{r}
+          ggplot(year_breakdown, aes(x = Year, y = AttritionPercentage)) +
+            geom_line() + 
+            labs(x = "Year", y = "Percentage of Returning Donors", title = "Yearly Attrition Rate") +
+            scale_y_continuous(limits = c(0, 100)) +
+            scale_x_continuous(limits = c(1978, 2016)) +
+            theme_minimal() + 
+            theme(plot.title = element_text(hjust = 0.5))
+          ```
+          
+          ## Are donors' gifts growing or shrinking over time?
+          
+          
+          ```{r}
+          donorclass1998 <- year_breakdown %>%
+            summarise(
+              NewYear = lag(Year, n = 17, default = 1),
+              Lag_1 = lag(DonorFirstYear, n = 17, default = 1),
+              Lag_2 = lag(DonorSecondYear, n = 16, default = 1),
+              Lag_3 = lag(DonorThirdYear, n = 15, default = 1),
+              Lag_4 = lag(DonorFourthYear, n = 14, default = 1),
+              Lag_5 = lag(DonorFifthYear, n = 13, default = 1),
+              Lag_6 = lag(DonorSixthYear, n = 12, default = 1),
+              Lag_7 = lag(DonorSeventhYear, n = 11, default = 1),
+              Lag_8 = lag(DonorEighthYear, n = 10, default = 1),
+              Lag_9 = lag(DonorNinthYear, n = 9, default = 1),
+              Lag_10 = lag(DonorTenthYear, n = 8, default = 1),
+              Lag_11 = lag(Donor11, n = 7, default = 1),
+              Lag_12 = lag(Donor12, n = 6, default = 1),
+              Lag_13 = lag(Donor13, n = 5, default = 1),
+              Lag_14 = lag(Donor14, n = 4, default = 1),
+              Lag_15 = lag(Donor15, n = 3, default = 1),
+              Lag_16 = lag(Donor16, n = 2, default = 1),
+              Lag_17 = lag(Donor17, n = 1, default = 1),
+              Lag_18 = lag(Donor18)
+            )
+          ```
+          
+          ```{r}
+          donorclass1998 <- donorclass1998 %>%
+            filter(NewYear == 1998)
+          
+          donorclass1998 <- donorclass1998 %>%
+            pivot_longer(
+              cols = starts_with("Lag"),
+              names_to = "Number",
+              values_to = "Donors"
+            )
+          
+          donorclass1998 <- donorclass1998 %>%
+            mutate(Year = as.numeric(gsub("Lag_", "", Number)))
+          ```
+          
+          ```{r}
+          ggplot(donorclass1998, aes(x = Year)) +
+            geom_line(aes(y = Donors)) +
+            scale_y_continuous(
+              breaks = c(0, 2500, 5000, 7500, 10000),
+              labels = c("0", "2500", "5000", "7500", "10000"),
+              limits = c(0, 10000))  +
+            labs(x = "Year", y = "Number of Donors", title = "Donor Class of 1998 Through the Years") +
+            theme_minimal() +
+            theme(plot.title = element_text(hjust = 0.5))
+          ```
+          
+          
+          ```{r}
+          
+          revenueclass1998 <- year_breakdown %>%
+            summarise(
+              NewYear = lag(Year, n = 9, default = 1),
+              Res_1 = lag(Rev_1_FirstYear, n = 9, default = 1),
+              Res_2 = lag(RevSecondYear, n = 8, default = 1),
+              Res_3 = lag(RevThirdYear, n = 7, default = 1),
+              Res_4 = lag(RevFourthYear, n = 6, default = 1),
+              Res_5 = lag(RevFifthYear, n = 5, default = 1),
+              Res_6 = lag(RevSixthYear, n = 4, default = 1),
+              Res_7 = lag(RevSeventhYear, n = 3, default = 1),
+              Res_8 = lag(RevEighthYear, n = 2, default = 1),
+              Res_9 = lag(RevNinthYear, n = 1, default = 1),
+              Res_10 = lag(RevTenthYear, n = 8, default = 1),
+              Res_11 = lag(Rev11, n = 7, default = 1),
+              Res_12 = lag(Rev12, n = 6, default = 1),
+              Res_13 = lag(Rev13, n = 5, default = 1),
+              Res_14 = lag(Rev14, n = 4, default = 1),
+              Res_15 = lag(Rev15, n = 3, default = 1),
+              Res_16 = lag(Rev16, n = 2, default = 1),
+              Res_17 = lag(Rev17, n = 1, default = 1),
+              Res_18 = lag(Rev18)
+            )
+          
+          revenueclass1998 <- revenueclass1998 %>%
+            filter(NewYear == 1998)
+          
+          revenueclass1998 <- revenueclass1998 %>%
+            pivot_longer(
+              cols = starts_with("Res"),
+              names_to = "Number",
+              values_to = "Donations"
+            )
+          
+          revenueclass1998 <- revenueclass1998 %>%
+            mutate(Year = as.numeric(gsub("Res_", "", Number)))
+          ```
+          
+          
+          ```{r}
+          ggplot(revenueclass1998, aes(x = Year)) +
+            geom_line(aes(y = Donations)) +
+            scale_y_continuous(
+              breaks = c(0, 500000, 1000000, 1500000, 2000000),
+              labels = c("0", "0.5", "1", "1.5", "2"),
+              limits = c(0, 1600000))  +
+            labs(x = "Year", y = "Donations in million $", title = "Donations by Year for 1998 Donor Class") +
+            theme_minimal() +
+            theme(plot.title = element_text(hjust = 0.5))
+          ```
+          </p>
+        
+        </div>
+    
+    <div class="section">
+        <h2>Report</h2>
+        <ul>
+          <li><a href="https://github.com/zhartsuff/DS398FinalProject/blob/main/DS398FinalReport.docx">Final Report</a></li>
+          <li><a href="https://github.com/zhartsuff/DS398FinalProject/blob/main/model_input_sample(in).csv">Dashboard Sample Data</a></li>
+          <li><a href="https://github.com/zhartsuff/DS398FinalProject/blob/main/monthlyData.csv">Timeseries Analysis Data</a></li>
+      </ul>
+    </div>
+    </div>
+</body>
+</html>
